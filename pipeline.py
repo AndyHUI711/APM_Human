@@ -1,17 +1,4 @@
-# Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+import json
 import os
 import yaml
 import glob
@@ -37,10 +24,11 @@ from python.infer import Detector, DetectorPicoDet
 from python.keypoint_infer import KeyPointDetector
 from python.keypoint_postprocess import translate_to_ori_images
 from python.preprocess import decode_image, ShortSizeScale
-from python.visualize import visualize_box_mask, visualize_attr, visualize_pose, visualize_action, visualize_vehicleplate
+from python.visualize import visualize_box_mask, visualize_attr, visualize_pose, visualize_action, \
+    visualize_vehicleplate
 
 from pptracking.python.mot_sde_infer import SDE_Detector
-from pptracking.python.mot.visualize import plot_tracking_dict
+from pptracking.python.mot.visualize import plot_tracking_dict, plot_tracking
 from pptracking.python.mot.utils import flow_statistic, update_object_info
 
 from pphuman.attr_infer import AttrDetector
@@ -49,9 +37,6 @@ from pphuman.action_infer import SkeletonActionRecognizer, DetActionRecognizer, 
 from pphuman.action_utils import KeyPointBuff, ActionVisualHelper
 from pphuman.reid import ReID
 from pphuman.mtmct import mtmct_process
-
-# from ppvehicle.vehicle_plate import PlateRecognizer
-# from ppvehicle.vehicle_attr import VehicleAttr
 
 from download import auto_download_model
 
@@ -66,8 +51,8 @@ class Pipeline(object):
     """
 
     def __init__(self, args, cfg):
-        self.multi_camera = False
-        reid_cfg = cfg.get('REID', False)
+        self.multi_camera = True
+        reid_cfg = cfg.get('REID', True)
         self.enable_mtmct = reid_cfg['enable'] if reid_cfg else False
         self.is_video = False
         self.output_dir = args.output_dir
@@ -75,6 +60,7 @@ class Pipeline(object):
         self.input = self._parse_input(args.image_file, args.image_dir,
                                        args.video_file, args.video_dir,
                                        args.camera_id, args.rtsp)
+
         if self.multi_camera:
             self.predictor = []
             for name in self.input:
@@ -88,6 +74,11 @@ class Pipeline(object):
             if self.is_video:
                 self.predictor.set_file_name(self.input)
 
+    """
+    read parameters settings 
+    return input
+    """
+
     def _parse_input(self, image_file, image_dir, video_file, video_dir,
                      camera_id, rtsp):
 
@@ -98,10 +89,21 @@ class Pipeline(object):
             self.is_video = False
             self.multi_camera = False
 
+        elif camera_id != -1:
+            print("Use camera id: {}".format(camera_id))
+            print(f"Camera 1: No {camera_id[0]}")
+            print(f"Camera 2: No {camera_id[1]}")
+
+            if len(camera_id) == 1:
+                self.multi_camera = False
+            else:
+                self.multi_camera = True
+            input = camera_id
+            self.is_video = True
+
         elif video_file is not None:
-            assert os.path.exists(
-                video_file
-            ) or 'rtsp' in video_file, "video_file not exists and not an rtsp site."
+            assert os.path.exists(video_file)
+            # or 'rtsp' in video_file, "video_file not exists and not an rtsp site."
             self.multi_camera = False
             input = video_file
             self.is_video = True
@@ -126,11 +128,7 @@ class Pipeline(object):
                 input = rtsp[0]
             self.is_video = True
 
-        elif camera_id != -1:
-            print("Use camera id: {}".format(camera_id))
-            self.multi_camera = False
-            input = camera_id
-            self.is_video = True
+
 
         else:
             raise ValueError(
@@ -190,13 +188,12 @@ class Pipeline(object):
 
 def get_model_dir(cfg):
     """ 
-        Auto download inference model if the model_path is a url link. 
-        Otherwise it will use the model_path directly.
+        It will use the model_path directly.
     """
     for key in cfg.keys():
-        if type(cfg[key]) ==  dict and \
-            ("enable" in cfg[key].keys() and cfg[key]['enable']
-                or "enable" not in cfg[key].keys()):
+        if type(cfg[key]) == dict and \
+                ("enable" in cfg[key].keys() and cfg[key]['enable']
+                 or "enable" not in cfg[key].keys()):
 
             if "model_dir" in cfg[key].keys():
                 model_dir = cfg[key]["model_dir"]
@@ -231,13 +228,6 @@ def get_model_dir(cfg):
 
 class PipePredictor(object):
     """
-    Predictor in single camera
-    
-    The pipeline for image input: 
-
-        1. Detection
-        2. Detection -> Attribute
-
     The pipeline for video input: 
 
         1. Tracking
@@ -273,10 +263,10 @@ class PipePredictor(object):
                                                         False) else False
         self.with_idbased_detaction = cfg.get(
             'ID_BASED_DETACTION', False)['enable'] if cfg.get(
-                'ID_BASED_DETACTION', False) else False
+            'ID_BASED_DETACTION', False) else False
         self.with_idbased_clsaction = cfg.get(
             'ID_BASED_CLSACTION', False)['enable'] if cfg.get(
-                'ID_BASED_CLSACTION', False) else False
+            'ID_BASED_CLSACTION', False) else False
         self.with_mtmct = cfg.get('REID', False)['enable'] if cfg.get(
             'REID', False) else False
 
@@ -290,19 +280,6 @@ class PipePredictor(object):
             print('IDBASED Classification Action Recognition enabled')
         if self.with_mtmct:
             print("MTMCT enabled")
-
-        # only for ppvehicle
-        self.with_vehicleplate = cfg.get(
-            'VEHICLE_PLATE', False)['enable'] if cfg.get('VEHICLE_PLATE',
-                                                         False) else False
-        if self.with_vehicleplate:
-            print('Vehicle Plate Recognition enabled')
-
-        self.with_vehicle_attr = cfg.get(
-            'VEHICLE_ATTR', False)['enable'] if cfg.get('VEHICLE_ATTR',
-                                                        False) else False
-        if self.with_vehicle_attr:
-            print('Vehicle Attribute Recognition enabled')
 
         self.modebase = {
             "framebased": False,
@@ -319,8 +296,6 @@ class PipePredictor(object):
             "ID_BASED_DETACTION": "idbased",
             "ID_BASED_CLSACTION": "idbased",
             "REID": "idbased",
-            "VEHICLE_PLATE": "idbased",
-            "VEHICLE_ATTR": "idbased",
         }
 
         self.is_video = is_video
@@ -332,7 +307,19 @@ class PipePredictor(object):
         self.secs_interval = args.secs_interval
         self.do_entrance_counting = args.do_entrance_counting
         self.do_break_in_counting = args.do_break_in_counting
-        self.region_type = args.region_type
+
+        # Read JSON data from file
+        with open('region_setting.json') as file:
+            data = json.load(file)
+        self.region_type = data['region_type']
+        self.region_line1 = int(data['line1'])
+        self.region_line2 = int(data['line2'])
+
+        # self.region_type = args.region_type
+        # self.region_line1 = args.line1
+        # self.region_line2 = args.line2
+
+
         self.region_polygon = args.region_polygon
         self.illegal_parking_time = args.illegal_parking_time
 
@@ -343,16 +330,10 @@ class PipePredictor(object):
         self.collector = DataCollector()
 
         self.pushurl = args.pushurl
-        self.play_local = False
+        self.play_local = args.play_local
 
         # auto download inference model
         get_model_dir(self.cfg)
-
-        if self.with_vehicleplate:
-            vehicleplate_cfg = self.cfg['VEHICLE_PLATE']
-            self.vehicleplate_detector = PlateRecognizer(args, vehicleplate_cfg)
-            basemode = self.basemode['VEHICLE_PLATE']
-            self.modebase[basemode] = True
 
         if self.with_human_attr:
             attr_cfg = self.cfg['ATTR']
@@ -360,23 +341,18 @@ class PipePredictor(object):
             self.modebase[basemode] = True
             self.attr_predictor = AttrDetector.init_with_cfg(args, attr_cfg)
 
-        if self.with_vehicle_attr:
-            vehicleattr_cfg = self.cfg['VEHICLE_ATTR']
-            basemode = self.basemode['VEHICLE_ATTR']
-            self.modebase[basemode] = True
-            self.vehicle_attr_predictor = VehicleAttr.init_with_cfg(
-                args, vehicleattr_cfg)
-
         if not is_video:
             det_cfg = self.cfg['DET']
             model_dir = det_cfg['model_dir']
             batch_size = det_cfg['batch_size']
+
             self.det_predictor = Detector(
                 model_dir, args.device, args.run_mode, batch_size,
                 args.trt_min_shape, args.trt_max_shape, args.trt_opt_shape,
                 args.trt_calib_mode, args.cpu_threads, args.enable_mkldnn)
         else:
             if self.with_idbased_detaction:
+                print("with_idbased_detaction")
                 idbased_detaction_cfg = self.cfg['ID_BASED_DETACTION']
                 basemode = self.basemode['ID_BASED_DETACTION']
                 self.modebase[basemode] = True
@@ -386,6 +362,7 @@ class PipePredictor(object):
                 self.det_action_visual_helper = ActionVisualHelper(1)
 
             if self.with_idbased_clsaction:
+                print("with_idbased_clsaction")
                 idbased_clsaction_cfg = self.cfg['ID_BASED_CLSACTION']
                 basemode = self.basemode['ID_BASED_CLSACTION']
                 self.modebase[basemode] = True
@@ -395,6 +372,7 @@ class PipePredictor(object):
                 self.cls_action_visual_helper = ActionVisualHelper(1)
 
             if self.with_skeleton_action:
+                print("with_skeleton_action")
                 skeleton_action_cfg = self.cfg['SKELETON_ACTION']
                 display_frames = skeleton_action_cfg['display_frames']
                 self.coord_size = skeleton_action_cfg['coord_size']
@@ -424,21 +402,16 @@ class PipePredictor(object):
                     use_dark=False)
                 self.kpt_buff = KeyPointBuff(skeleton_action_frames)
 
-            if self.with_vehicleplate:
-                vehicleplate_cfg = self.cfg['VEHICLE_PLATE']
-                self.vehicleplate_detector = PlateRecognizer(args,
-                                                             vehicleplate_cfg)
-                basemode = self.basemode['VEHICLE_PLATE']
-                self.modebase[basemode] = True
-
             if self.with_mtmct:
+                print("with_mtmct")
                 reid_cfg = self.cfg['REID']
                 basemode = self.basemode['REID']
                 self.modebase[basemode] = True
                 self.reid_predictor = ReID.init_with_cfg(args, reid_cfg)
 
             if self.with_mot or self.modebase["idbased"] or self.modebase[
-                    "skeletonbased"]:
+                "skeletonbased"]:
+                print("with_mot")
                 mot_cfg = self.cfg['MOT']
                 model_dir = mot_cfg['model_dir']
                 tracker_config = mot_cfg['tracker_config']
@@ -467,6 +440,7 @@ class PipePredictor(object):
                     region_polygon=self.region_polygon)
 
             if self.with_video_action:
+                print("with_video_action")
                 video_action_cfg = self.cfg['VIDEO_ACTION']
                 basemode = self.basemode['VIDEO_ACTION']
                 self.modebase[basemode] = True
@@ -495,91 +469,11 @@ class PipePredictor(object):
             self.predict_image(input)
         self.pipe_timer.info()
 
-    def predict_image(self, input):
-        # det
-        # det -> attr
-        batch_loop_cnt = math.ceil(
-            float(len(input)) / self.det_predictor.batch_size)
-        for i in range(batch_loop_cnt):
-            start_index = i * self.det_predictor.batch_size
-            end_index = min((i + 1) * self.det_predictor.batch_size, len(input))
-            batch_file = input[start_index:end_index]
-            batch_input = [decode_image(f, {})[0] for f in batch_file]
-
-            if i > self.warmup_frame:
-                self.pipe_timer.total_time.start()
-                self.pipe_timer.module_time['det'].start()
-            # det output format: class, score, xmin, ymin, xmax, ymax
-            det_res = self.det_predictor.predict_image(
-                batch_input, visual=False)
-            det_res = self.det_predictor.filter_box(det_res,
-                                                    self.cfg['crop_thresh'])
-            if i > self.warmup_frame:
-                self.pipe_timer.module_time['det'].end()
-                self.pipe_timer.track_num += len(det_res['boxes'])
-            self.pipeline_res.update(det_res, 'det')
-
-            if self.with_human_attr:
-                crop_inputs = crop_image_with_det(batch_input, det_res)
-                attr_res_list = []
-
-                if i > self.warmup_frame:
-                    self.pipe_timer.module_time['attr'].start()
-
-                for crop_input in crop_inputs:
-                    attr_res = self.attr_predictor.predict_image(
-                        crop_input, visual=False)
-                    attr_res_list.extend(attr_res['output'])
-
-                if i > self.warmup_frame:
-                    self.pipe_timer.module_time['attr'].end()
-
-                attr_res = {'output': attr_res_list}
-                self.pipeline_res.update(attr_res, 'attr')
-
-            if self.with_vehicle_attr:
-                crop_inputs = crop_image_with_det(batch_input, det_res)
-                vehicle_attr_res_list = []
-
-                if i > self.warmup_frame:
-                    self.pipe_timer.module_time['vehicle_attr'].start()
-
-                for crop_input in crop_inputs:
-                    attr_res = self.vehicle_attr_predictor.predict_image(
-                        crop_input, visual=False)
-                    vehicle_attr_res_list.extend(attr_res['output'])
-
-                if i > self.warmup_frame:
-                    self.pipe_timer.module_time['vehicle_attr'].end()
-
-                attr_res = {'output': vehicle_attr_res_list}
-                self.pipeline_res.update(attr_res, 'vehicle_attr')
-
-            if self.with_vehicleplate:
-                if i > self.warmup_frame:
-                    self.pipe_timer.module_time['vehicleplate'].start()
-                crop_inputs = crop_image_with_det(batch_input, det_res)
-                platelicenses = []
-                for crop_input in crop_inputs:
-                    platelicense = self.vehicleplate_detector.get_platelicense(
-                        crop_input)
-                    platelicenses.extend(platelicense['plate'])
-                if i > self.warmup_frame:
-                    self.pipe_timer.module_time['vehicleplate'].end()
-                vehicleplate_res = {'vehicleplate': platelicenses}
-                self.pipeline_res.update(vehicleplate_res, 'vehicleplate')
-
-            self.pipe_timer.img_num += len(batch_input)
-            if i > self.warmup_frame:
-                self.pipe_timer.total_time.end()
-
-            if self.cfg['visual']:
-                self.visualize_image(batch_file, batch_input, self.pipeline_res)
-
     def predict_video(self, video_file, thread_idx=0):
         # mot
         # mot -> attr
         # mot -> pose -> action
+        print(f"input file {video_file}, thread_inx {thread_idx} ")
         capture = cv2.VideoCapture(video_file)
 
         # Get Video info : resolution, fps, frame count
@@ -587,9 +481,10 @@ class PipePredictor(object):
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(capture.get(cv2.CAP_PROP_FPS))
         frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+
         print("video fps: %d, frame_count: %d" % (fps, frame_count))
         if self.play_local:
-            print("play local")
+            print("play local using opencv")
         elif len(self.pushurl) > 0:
             video_out_name = 'output' if self.file_name is None else self.file_name
             pushurl = os.path.join(self.pushurl, video_out_name)
@@ -603,8 +498,8 @@ class PipePredictor(object):
                     2) + "_rtsp"
             if not os.path.exists(self.output_dir):
                 os.makedirs(self.output_dir)
-            out_path = os.path.join(self.output_dir, video_out_name+".mp4")
-            fourcc = cv2.VideoWriter_fourcc(* 'mp4v')
+            out_path = os.path.join(self.output_dir, video_out_name + ".mp4")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
 
         frame_id = 0
@@ -618,24 +513,28 @@ class PipePredictor(object):
         out_id_list = list()
         prev_center = dict()
         records = list()
-        if self.do_entrance_counting or self.do_break_in_counting or self.illegal_parking_time != -1:
-            if self.region_type == 'horizontal':
-                entrance = [0, height / 2., width, height / 2.]
-            elif self.region_type == 'vertical':
-                entrance = [width / 2, 0., width / 2, height]
-            elif self.region_type == 'custom':
-                entrance = []
-                assert len(
-                    self.region_polygon
-                ) % 2 == 0, "region_polygon should be pairs of coords points when do break_in counting."
-                assert len(
-                    self.region_polygon
-                ) > 6, 'region_type is custom, region_polygon should be at least 3 pairs of point coords.'
 
-                for i in range(0, len(self.region_polygon), 2):
-                    entrance.append(
-                        [self.region_polygon[i], self.region_polygon[i + 1]])
-                entrance.append([width, height])
+        # Read JSON data from file
+        with open('region_setting.json') as file:
+            data = json.load(file)
+        self.region_type = data['region_type']
+        self.region_line1 = int(data['line1'])
+        self.region_line2 = int(data['line2'])
+        # customize door position # entrance counting
+        if self.do_entrance_counting or self.do_break_in_counting or self.illegal_parking_time != -1:
+            if self.region_type == 'both':
+                entrance = [0, self.region_line1, width, self.region_line1, 0, self.region_line2, width,
+                            self.region_line2]
+
+            elif self.region_type == 'right':
+                entrance = [0, self.region_line2, width, self.region_line2]
+
+            elif self.region_type == 'left':
+                entrance = [0, self.region_line1, width, self.region_line1]
+
+            elif self.region_type == 'close':
+                entrance = [0, 0, 0, 0, 0, 0, 0, 0]
+
             else:
                 raise ValueError("region_type:{} unsupported.".format(
                     self.region_type))
@@ -659,10 +558,12 @@ class PipePredictor(object):
             ret, frame = capture.read()
             if not ret:
                 break
+
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             if frame_id > self.warmup_frame:
                 self.pipe_timer.total_time.start()
 
+            # main infer
             if self.modebase["idbased"] or self.modebase["skeletonbased"]:
                 if frame_id > self.warmup_frame:
                     self.pipe_timer.module_time['mot'].start()
@@ -717,8 +618,10 @@ class PipePredictor(object):
                             plate = self.collector.get_carlp(key)
                             illegal_parking_dict[key]['plate'] = plate
 
-                #nothing detected
+                # nothing detected
                 if len(mot_res['boxes']) == 0:
+                    # print("no object detected")
+
                     frame_id += 1
                     if frame_id > self.warmup_frame:
                         self.pipe_timer.img_num += 1
@@ -729,8 +632,9 @@ class PipePredictor(object):
                                                   entrance, records,
                                                   center_traj)  # visualize
                         if self.play_local:
-                            break
-                        elif len(self.pushurl)>0:
+                            continue
+
+                        elif len(self.pushurl) > 0:
                             pushstream.pipe.stdin.write(im.tobytes())
                         else:
                             writer.write(im)
@@ -745,19 +649,6 @@ class PipePredictor(object):
                 crop_input, new_bboxes, ori_bboxes = crop_image_with_mot(
                     frame_rgb, mot_res)
 
-                if self.with_vehicleplate and frame_id % 10 == 0:
-                    if frame_id > self.warmup_frame:
-                        self.pipe_timer.module_time['vehicleplate'].start()
-                    plate_input, _, _ = crop_image_with_mot(
-                        frame_rgb, mot_res, expand=False)
-                    platelicense = self.vehicleplate_detector.get_platelicense(
-                        plate_input)
-                    if frame_id > self.warmup_frame:
-                        self.pipe_timer.module_time['vehicleplate'].end()
-                    self.pipeline_res.update(platelicense, 'vehicleplate')
-                else:
-                    self.pipeline_res.clear('vehicleplate')
-
                 if self.with_human_attr:
                     if frame_id > self.warmup_frame:
                         self.pipe_timer.module_time['attr'].start()
@@ -766,15 +657,6 @@ class PipePredictor(object):
                     if frame_id > self.warmup_frame:
                         self.pipe_timer.module_time['attr'].end()
                     self.pipeline_res.update(attr_res, 'attr')
-
-                if self.with_vehicle_attr:
-                    if frame_id > self.warmup_frame:
-                        self.pipe_timer.module_time['vehicle_attr'].start()
-                    attr_res = self.vehicle_attr_predictor.predict_image(
-                        crop_input, visual=False)
-                    if frame_id > self.warmup_frame:
-                        self.pipe_timer.module_time['vehicle_attr'].end()
-                    self.pipeline_res.update(attr_res, 'vehicle_attr')
 
                 if self.with_idbased_detaction:
                     if frame_id > self.warmup_frame:
@@ -860,6 +742,7 @@ class PipePredictor(object):
                 else:
                     self.pipeline_res.clear('reid')
 
+            # default false
             if self.with_video_action:
                 # get the params
                 frame_len = self.cfg["VIDEO_ACTION"]["frame_len"]
@@ -888,17 +771,19 @@ class PipePredictor(object):
                     video_action_res = {"class": classes[0], "score": scores[0]}
                     self.pipeline_res.update(video_action_res, 'video_action')
 
-                    print("video_action_res:", video_action_res)
+                    # print("video_action_res:", video_action_res)
 
                     video_action_imgs.clear()  # next clip
 
             self.collector.append(frame_id, self.pipeline_res)
 
+            # warmup function
             if frame_id > self.warmup_frame:
                 self.pipe_timer.img_num += 1
                 self.pipe_timer.total_time.end()
             frame_id += 1
 
+            # play local (screen) setting & coding
             if self.cfg['visual']:
                 _, _, fps = self.pipe_timer.get_total_time()
 
@@ -908,35 +793,39 @@ class PipePredictor(object):
                                           self.illegal_parking_time != -1,
                                           illegal_parking_dict)  # visualize
 
+                # results display -> screen
                 if self.play_local:
                     # Read until video is completed
+                    print(f"fps {fps}")
+                    #print(f"records {records}")
                     while (capture.isOpened()):
                         # Display the resulting frame
-                        cv2.imshow('Frame', im)
+                        cv2.imshow(str(thread_idx), im)
                         # Press Q on keyboard to  exit
                         if cv2.waitKey(25) & 0xFF == ord('q'):
                             break
                         # Break the loop
                         else:
                             break
-
-                elif len(self.pushurl)>0:
-                    pushstream.pipe.stdin.write(im.tobytes())
                 else:
-                    writer.write(im)
-                    if self.file_name is None:  # use camera_id
-                        cv2.imshow('Paddle-Pipeline', im)
-                        if cv2.waitKey(1) & 0xFF == ord('q'):
-                            break
+                    print(f"fps {fps}")
+                # elif len(self.pushurl) > 0:
+                #     pushstream.pipe.stdin.write(im.tobytes())
+                # else:
+                #     writer.write(im)
+                #     if self.file_name is None:  # use camera_id
+                #         cv2.imshow('Paddle-Pipeline', im)
+                #         if cv2.waitKey(1) & 0xFF == ord('q'):
+                #             break
 
         # When everything done, release the video capture object
         capture.release()
         # Closes all the frames
         cv2.destroyAllWindows()
 
-        if self.cfg['visual'] and len(self.pushurl)==0:
-            writer.release()
-            print('save result to {}'.format(out_path))
+        # if self.cfg['visual'] and len(self.pushurl)==0:
+        #     writer.release()
+        #     print('save result to {}'.format(out_path))
 
     def visualize_video(self,
                         image,
@@ -969,8 +858,13 @@ class PipePredictor(object):
         online_tlwhs[0] = boxes
         online_scores[0] = scores
         online_ids[0] = ids
+        # print mot_res for testing
+        # print(mot_res)
+        # {'boxes': array([[9.00000000e+00, 0.00000000e+00, 7.61203766e-01, 2.49559662e+02,
+        # 9.08416733e-02, 3.11986725e+02, 2.35077081e+02]])}
 
         if mot_res is not None:
+            # print(entrance)
             image = plot_tracking_dict(
                 image,
                 num_classes,
@@ -987,19 +881,28 @@ class PipePredictor(object):
                 entrance=entrance,
                 records=records,
                 center_traj=center_traj)
+        else:
+            entrance = [0, self.region_line1, 640, self.region_line1, 0, self.region_line2, 640, self.region_line2]
+            image = plot_tracking(
+                image,
+                1,
+                frame_id=frame_id,
+                fps=fps,
+                ids2names=self.mot_predictor.pred_config.labels,
+                do_entrance_counting=self.do_entrance_counting,
+                do_break_in_counting=self.do_break_in_counting,
+                do_illegal_parking_recognition=do_illegal_parking_recognition,
+                illegal_parking_dict=illegal_parking_dict,
+                entrance=entrance,
+                records=records,
+                center_traj=center_traj
+            )
 
         human_attr_res = result.get('attr')
         if human_attr_res is not None:
             boxes = mot_res['boxes'][:, 1:]
             human_attr_res = human_attr_res['output']
             image = visualize_attr(image, human_attr_res, boxes)
-            image = np.array(image)
-
-        vehicle_attr_res = result.get('vehicle_attr')
-        if vehicle_attr_res is not None:
-            boxes = mot_res['boxes'][:, 1:]
-            vehicle_attr_res = vehicle_attr_res['output']
-            image = visualize_attr(image, vehicle_attr_res, boxes)
             image = np.array(image)
 
         if mot_res is not None:
@@ -1066,19 +969,70 @@ class PipePredictor(object):
 
         return image
 
+    """
+    Test with image; 1 frame
+    """
+
+    def predict_image(self, input):
+        # det
+        # det -> attr
+        batch_loop_cnt = math.ceil(
+            float(len(input)) / self.det_predictor.batch_size)
+        for i in range(batch_loop_cnt):
+            start_index = i * self.det_predictor.batch_size
+            end_index = min((i + 1) * self.det_predictor.batch_size, len(input))
+            batch_file = input[start_index:end_index]
+            batch_input = [decode_image(f, {})[0] for f in batch_file]
+
+            if i > self.warmup_frame:
+                self.pipe_timer.total_time.start()
+                self.pipe_timer.module_time['det'].start()
+            # det output format: class, score, xmin, ymin, xmax, ymax
+            det_res = self.det_predictor.predict_image(
+                batch_input, visual=False)
+            det_res = self.det_predictor.filter_box(det_res,
+                                                    self.cfg['crop_thresh'])
+            if i > self.warmup_frame:
+                self.pipe_timer.module_time['det'].end()
+                self.pipe_timer.track_num += len(det_res['boxes'])
+            self.pipeline_res.update(det_res, 'det')
+
+            if self.with_human_attr:
+                crop_inputs = crop_image_with_det(batch_input, det_res)
+                attr_res_list = []
+
+                if i > self.warmup_frame:
+                    self.pipe_timer.module_time['attr'].start()
+
+                for crop_input in crop_inputs:
+                    attr_res = self.attr_predictor.predict_image(
+                        crop_input, visual=False)
+                    attr_res_list.extend(attr_res['output'])
+
+                if i > self.warmup_frame:
+                    self.pipe_timer.module_time['attr'].end()
+
+                attr_res = {'output': attr_res_list}
+                self.pipeline_res.update(attr_res, 'attr')
+
+            self.pipe_timer.img_num += len(batch_input)
+            if i > self.warmup_frame:
+                self.pipe_timer.total_time.end()
+
+            if self.cfg['visual']:
+                self.visualize_image(batch_file, batch_input, self.pipeline_res)
+
     def visualize_image(self, im_files, images, result):
         start_idx, boxes_num_i = 0, 0
         det_res = result.get('det')
         human_attr_res = result.get('attr')
-        vehicle_attr_res = result.get('vehicle_attr')
-        vehicleplate_res = result.get('vehicleplate')
 
         for i, (im_file, im) in enumerate(zip(im_files, images)):
             if det_res is not None:
                 det_res_i = {}
                 boxes_num_i = det_res['boxes_num'][i]
                 det_res_i['boxes'] = det_res['boxes'][start_idx:start_idx +
-                                                      boxes_num_i, :]
+                                                                boxes_num_i, :]
                 im = visualize_box_mask(
                     im,
                     det_res_i,
@@ -1088,17 +1042,8 @@ class PipePredictor(object):
                 im = cv2.cvtColor(im, cv2.COLOR_RGB2BGR)
             if human_attr_res is not None:
                 human_attr_res_i = human_attr_res['output'][start_idx:start_idx
-                                                            + boxes_num_i]
+                                                                      + boxes_num_i]
                 im = visualize_attr(im, human_attr_res_i, det_res_i['boxes'])
-            if vehicle_attr_res is not None:
-                vehicle_attr_res_i = vehicle_attr_res['output'][
-                    start_idx:start_idx + boxes_num_i]
-                im = visualize_attr(im, vehicle_attr_res_i, det_res_i['boxes'])
-            if vehicleplate_res is not None:
-                plates = vehicleplate_res['vehicleplate']
-                det_res_i['boxes'][:, 4:6] = det_res_i[
-                    'boxes'][:, 4:6] - det_res_i['boxes'][:, 2:4]
-                im = visualize_vehicleplate(im, plates, det_res_i['boxes'])
 
             img_name = os.path.split(im_file)[-1]
             if not os.path.exists(self.output_dir):
@@ -1110,6 +1055,24 @@ class PipePredictor(object):
 
 
 def main():
+    cfg = merge_cfg(FLAGS)  # use command params to update config
+    print_arguments(cfg)
+
+    pipeline = Pipeline(FLAGS, cfg)
+    # pipeline.run()
+    pipeline.run_multithreads()
+
+
+def start():
+    paddle.enable_static()
+
+    # parse params from command
+    parser = argsparser()
+    FLAGS = parser.parse_args()
+    FLAGS.device = FLAGS.device.upper()
+    assert FLAGS.device in ['CPU', 'GPU', 'XPU'
+                            ], "device should be CPU, GPU or XPU"
+
     cfg = merge_cfg(FLAGS)  # use command params to update config
     print_arguments(cfg)
 

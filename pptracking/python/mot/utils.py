@@ -232,9 +232,19 @@ def flow_statistic(result,
 
     if do_entrance_counting:
         assert region_type in [
-            'horizontal', 'vertical'
-        ], "region_type should be 'horizontal' or 'vertical' when do entrance counting."
-        entrance_x, entrance_y = entrance[0], entrance[1]
+            'both', 'right', 'left', 'close'
+        ], "region_type should be 'horizontal' or 'vertical' or 'custom_1' or 'custom_2' when do entrance counting."
+
+        #test
+        print(f"Test:{region_type} && {entrance}")
+
+        if region_type == 'left' or region_type == 'right':
+            entrance_x, entrance_y = entrance[0], entrance[1]
+        else:
+            entrance_x1, entrance_y1 = entrance[0], entrance[1]
+            entrance_x2, entrance_y2 = entrance[4], entrance[5]
+
+        # print(entrance_x, entrance_y)
         frame_id, tlwhs, tscores, track_ids = result
         for tlwh, score, track_id in zip(tlwhs, tscores, track_ids):
             if track_id < 0: continue
@@ -244,22 +254,39 @@ def flow_statistic(result,
             center_x = x1 + w / 2.
             center_y = y1 + h / 2.
             if track_id in prev_center:
-                if region_type == 'horizontal':
-                    # horizontal center line
+                if region_type == 'left':
+                    # left line
+                    if prev_center[track_id][1] >= entrance_y and \
+                            center_y < entrance_y:
+                        in_id_list.append(track_id)
                     if prev_center[track_id][1] <= entrance_y and \
-                    center_y > entrance_y:
+                            center_y > entrance_y:
+                        out_id_list.append(track_id)
+                elif region_type == 'right':
+                    # right line
+                    if prev_center[track_id][1] <= entrance_y and \
+                            center_y > entrance_y:
                         in_id_list.append(track_id)
                     if prev_center[track_id][1] >= entrance_y and \
-                    center_y < entrance_y:
+                            center_y < entrance_y:
                         out_id_list.append(track_id)
-                else:
-                    # vertical center line
-                    if prev_center[track_id][0] <= entrance_x and \
-                    center_x > entrance_x:
+                elif region_type == 'both':
+                    # horizontal customized center lines
+                    # print(entrance_x1, entrance_y1,entrance_x2, entrance_y2)
+                    if prev_center[track_id][1] <= entrance_y1 and \
+                            center_y > entrance_y1:
                         in_id_list.append(track_id)
-                    if prev_center[track_id][0] >= entrance_x and \
-                    center_x < entrance_x:
+                    if prev_center[track_id][1] >= entrance_y1 and \
+                            center_y < entrance_y1:
                         out_id_list.append(track_id)
+                    if prev_center[track_id][1] <= entrance_y2 and \
+                            center_y > entrance_y2:
+                        out_id_list.append(track_id)
+                    if prev_center[track_id][1] >= entrance_y2 and \
+                            center_y < entrance_y2:
+                        in_id_list.append(track_id)
+                else:
+                   continue
                 prev_center[track_id][0] = center_x
                 prev_center[track_id][1] = center_y
             else:
@@ -267,8 +294,8 @@ def flow_statistic(result,
 
     if do_break_in_counting:
         assert region_type in [
-            'custom'
-        ], "region_type should be 'custom' when do break_in counting."
+            'custom', 'custom2'
+        ], "region_type should be 'custom' or 'custom2'when do break_in counting."
         assert len(
             entrance
         ) >= 4, "entrance should be at least 3 points and (w,h) of image when do break_in counting."
@@ -297,14 +324,14 @@ def flow_statistic(result,
                 if track_id in prev_center:
                     if not in_quadrangle(prev_center[track_id], entrance, im_h,
                                          im_w) and in_quadrangle(
-                                             [center_x, center_y], entrance,
-                                             im_h, im_w):
+                        [center_x, center_y], entrance,
+                        im_h, im_w):
                         in_id_list.append(track_id)
                     prev_center[track_id] = [center_x, center_y]
                 else:
                     prev_center[track_id] = [center_x, center_y]
 
-# Count totol number, number at a manual-setting interval
+    # Count totol number, number at a manual-setting interval
     frame_id, tlwhs, tscores, track_ids = result
     for tlwh, score, track_id in zip(tlwhs, tscores, track_ids):
         if track_id < 0: continue
@@ -343,7 +370,6 @@ def distance(center_1, center_2):
     return math.sqrt(
         math.pow(center_1[0] - center_2[0], 2) + math.pow(center_1[1] -
                                                           center_2[1], 2))
-
 
 # update vehicle parking info
 def update_object_info(object_in_region_info,
@@ -424,7 +450,6 @@ def update_object_info(object_in_region_info,
             illegal_parking_dict[track_id] = {"bbox": [x1, y1, w, h]}
 
     return object_in_region_info, illegal_parking_dict
-
 
 def in_quadrangle(point, entrance, im_h, im_w):
     mask = np.zeros((im_h, im_w, 1), np.uint8)

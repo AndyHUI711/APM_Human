@@ -421,6 +421,7 @@ class SDE_Detector(Detector):
                       visual=True,
                       seq_name=None,
                       reuse_det_result=False):
+        #print("predict_image: mot")
         num_classes = self.num_classes
         image_list.sort()
         ids2names = self.pred_config.labels

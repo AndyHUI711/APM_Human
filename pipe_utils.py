@@ -1,17 +1,3 @@
-# Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import time
 import os
 import ast
@@ -49,7 +35,6 @@ class Times(object):
 
     def value(self):
         return round(self.time, 4)
-
 
 class PipeTimer(Times):
     def __init__(self):
@@ -143,7 +128,6 @@ class PushStream(object):
                 self.pushurl]
         self.pipe = sp.Popen(self.command, stdin=sp.PIPE)
 
-
 def get_test_images(infer_dir, infer_img):
     """
     Get image path list in TEST mode
@@ -174,7 +158,6 @@ def get_test_images(infer_dir, infer_img):
 
     return images
 
-
 def crop_image_with_det(batch_input, det_res, thresh=0.3):
     boxes = det_res['boxes']
     score = det_res['boxes'][:, 1]
@@ -196,7 +179,6 @@ def crop_image_with_det(batch_input, det_res, thresh=0.3):
         crop_res.append(res)
     return crop_res
 
-
 def normal_crop(image, rect):
     imgh, imgw, c = image.shape
     label, conf, xmin, ymin, xmax, ymax = [int(x) for x in rect.tolist()]
@@ -208,7 +190,6 @@ def normal_crop(image, rect):
     xmax = min(imgw, xmax)
     ymax = min(imgh, ymax)
     return image[ymin:ymax, xmin:xmax, :], [xmin, ymin, xmax, ymax], org_rect
-
 
 def crop_image_with_mot(input, mot_res, expand=True):
     res = mot_res['boxes']
@@ -226,7 +207,6 @@ def crop_image_with_mot(input, mot_res, expand=True):
             ori_bboxes.append(ori_bbox)
     return crop_res, new_bboxes, ori_bboxes
 
-
 def parse_mot_res(input):
     mot_res = []
     boxes, scores, ids = input[0]
@@ -235,7 +215,6 @@ def parse_mot_res(input):
         res = [i, 0, score, xmin, ymin, xmin + w, ymin + h]
         mot_res.append(res)
     return {'boxes': np.array(mot_res)}
-
 
 def refine_keypoint_coordinary(kpts, bbox, coord_size):
     """
@@ -249,7 +228,6 @@ def refine_keypoint_coordinary(kpts, bbox, coord_size):
     res = (kpts - tl) / wh * np.expand_dims(
         np.array([[target_w], [target_h]]), (2, 3))
     return res
-
 
 def parse_mot_keypoint(input, coord_size):
     parsed_skeleton_with_mot = {}

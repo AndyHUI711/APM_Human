@@ -9,8 +9,8 @@ DET:
   batch_size: 1
 
 MOT:
-  model_dir: E:\1_python_myjobs\capstonoeFYP\Models\mot_ppyoloe_l_36e_pipeline
-  tracker_config: E:\1_python_myjobs\capstonoeFYP\config\tracker_config.yml
+  model_dir: E:\1_python_myjobs\capstonoeFYP\APM_Human\Models\mot_ppyoloe_l_36e_pipeline
+  tracker_config: E:\1_python_myjobs\capstonoeFYP\APM_Human\config\tracker_config.yml
   batch_size: 1
   skip_frame_num: 2 # preferably no more than 3
   enable: True # True for video
@@ -58,6 +58,6 @@ ID_BASED_CLSACTION:
   enable: False
 
 REID:
-  model_dir:  https://bj.bcebos.com/v1/paddledet/models/pipeline/reid_model.zip
+  model_dir:  E:\1_python_myjobs\capstonoeFYP\APM_Human\Models\reid_model
   batch_size: 16
-  enable: False
+  enable: True

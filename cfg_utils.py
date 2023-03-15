@@ -58,16 +58,17 @@ def argsparser():
         type=str,
         default=None,
         help="Dir of image file, `image_file` has a higher priority.")
+
     parser.add_argument(
         "--video_file",
         type=str,
-        default=None,
+        default= None, #'../Record_data/4k1.mp4', ##
         help="Path of video file, `video_file` or `camera_id` has a highest priority."
     )
     parser.add_argument(
         "--video_dir",
         type=str,
-        default=None,
+        default="../Record_data/two_test_video",
         help="Dir of video file, `video_file` has a higher priority.")
     parser.add_argument(
         "--rtsp",
@@ -76,9 +77,15 @@ def argsparser():
         default=None,
         help="list of rtsp inputs, for one or multiple rtsp input.")
     parser.add_argument(
+        "--play_local",
+        type=str,
+        nargs='+',
+        default=True,
+    )
+    parser.add_argument(
         "--camera_id",
         type=int,
-        default=-1,
+        default=[0, 1], ##, #-1, #
         help="device id of camera to predict.")
     parser.add_argument(
         "--output_dir",
@@ -125,19 +132,21 @@ def argsparser():
         type=bool,
         default=False,
         help="If the model is produced by TRT offline quantitative "
-        "calibration, trt_calib_mode need to set True.")
+             "calibration, trt_calib_mode need to set True.")
     parser.add_argument(
         "--do_entrance_counting",
         action='store_true',
+        default=True,
         help="Whether counting the numbers of identifiers entering "
-        "or getting out from the entrance. Note that only support single-class MOT."
+             "or getting out from the entrance. Note that only support single-class MOT."
     )
     parser.add_argument(
         "--do_break_in_counting",
         action='store_true',
+        default=False,
         help="Whether counting the numbers of identifiers break in "
-        "the area. Note that only support single-class MOT and "
-        "the video should be taken by a static camera.")
+             "the area. Note that only support single-class MOT and "
+             "the video should be taken by a static camera.")
     parser.add_argument(
         "--illegal_parking_time",
         type=int,
@@ -147,19 +156,31 @@ def argsparser():
     parser.add_argument(
         "--region_type",
         type=str,
-        default='horizontal',
-        help="Area type for entrance counting or break in counting, 'horizontal' and "
-        "'vertical' used when do entrance counting. 'custom' used when do break in counting. "
-        "Note that only support single-class MOT, and the video should be taken by a static camera."
+        default='close',
+        help="Area type for entrance counting or break in counting"
     )
+    parser.add_argument(
+        "--line1",
+        type=str,
+        default=125,
+        help="'horizontal' line for entrance counting or break in counting"
+    )
+    parser.add_argument(
+        "--line2",
+        type=str,
+        default=250,
+        help="'horizontal' line for entrance counting or break in counting"
+    )
+
+
     parser.add_argument(
         '--region_polygon',
         nargs='+',
         type=int,
         default=[],
         help="Clockwise point coords (x0,y0,x1,y1...) of polygon of area when "
-        "do_break_in_counting. Note that only support single-class MOT and "
-        "the video should be taken by a static camera.")
+             "do_break_in_counting. Note that only support single-class MOT and "
+             "the video should be taken by a static camera.")
     parser.add_argument(
         "--secs_interval",
         type=int,
@@ -168,6 +189,7 @@ def argsparser():
     parser.add_argument(
         "--draw_center_traj",
         action='store_true',
+        default=True,
         help="Whether drawing the trajectory of center")
 
     return parser

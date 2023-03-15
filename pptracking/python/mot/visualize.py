@@ -183,6 +183,36 @@ def plot_tracking(image,
             thickness=line_thickness)
     return im
 
+def plot_info(image,
+                  frame_id=0,
+                  fps=0.,
+                  do_entrance_counting=False,
+                  entrance=None):
+
+    im = np.ascontiguousarray(np.copy(image))
+    im_h, im_w = im.shape[:2]
+
+    text_scale = max(0.5, image.shape[1] / 3000.)
+    text_thickness = 2
+    line_thickness = max(1, int(image.shape[1] / 500.))
+
+    cv2.putText(
+        im,
+        'frame: %d fps: %.2f' % (frame_id, fps),
+        (0, int(15 * text_scale) + 5),
+        cv2.FONT_ITALIC,
+        text_scale, (0, 0, 255),
+        thickness=text_thickness)
+
+    if do_entrance_counting:
+        entrance_line = tuple(map(int, entrance))
+        cv2.rectangle(
+            im,
+            entrance_line[0:2],
+            entrance_line[2:4],
+            color=(0, 255, 255),
+            thickness=line_thickness)
+    return im
 
 def plot_tracking_dict(image,
                        num_classes,
@@ -226,6 +256,12 @@ def plot_tracking_dict(image,
             entrance_line[0:2],
             entrance_line[2:4],
             color=(0, 255, 255),
+            thickness=line_thickness)
+        cv2.rectangle(
+            im,
+            entrance_line[4:6],
+            entrance_line[6:8],
+            color=(255, 0, 255),
             thickness=line_thickness)
         # find start location for entrance counting data
         start = records[-1].find('In')
@@ -364,6 +400,55 @@ def plot_tracking_dict(image,
                         cv2.circle(im, point, 3, (0, 0, 255), -1)
     return im
 
+def plot_tracking(image,
+                       num_classes,
+                       frame_id=0,
+                       fps=0.,
+                       ids2names=[],
+                       do_entrance_counting=False,
+                       do_break_in_counting=False,
+                       do_illegal_parking_recognition=False,
+                       illegal_parking_dict=None,
+                       entrance=None,
+                       records=None,
+                       center_traj=None):
+
+    im = np.ascontiguousarray(np.copy(image))
+    im_h, im_w = im.shape[:2]
+
+    if do_break_in_counting or do_illegal_parking_recognition:
+        entrance = np.array(entrance[:-1])  # last pair is [im_w, im_h]
+
+    text_scale = max(0.5, image.shape[1] / 3000.)
+    text_thickness = 2
+    line_thickness = max(1, int(image.shape[1] / 500.))
+    records = None
+    if num_classes == 1:
+        if records is not None:
+            start = records[-1].find('Total')
+            end = records[-1].find('In')
+            cv2.putText(
+                im,
+                records[-1][start:end], (0, int(40 * text_scale) + 10),
+                cv2.FONT_ITALIC,
+                text_scale, (0, 0, 255),
+                thickness=text_thickness)
+
+    if do_entrance_counting:
+        entrance_line = tuple(map(int, entrance))
+        cv2.rectangle(
+            im,
+            entrance_line[0:2],
+            entrance_line[2:4],
+            color=(0, 255, 255),
+            thickness=line_thickness)
+        cv2.rectangle(
+            im,
+            entrance_line[4:6],
+            entrance_line[6:8],
+            color=(255, 0, 255),
+            thickness=line_thickness)
+    return im
 
 def in_quadrangle(point, entrance, im_h, im_w):
     mask = np.zeros((im_h, im_w, 1), np.uint8)
